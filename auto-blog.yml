@@ -1,4 +1,4 @@
-name: OnlyTels Blogger Test
+name: Blogger Test
 
 on:
   workflow_dispatch:
@@ -14,6 +14,7 @@ jobs:
           BLOGGER_CLIENT_SECRET: ${{ secrets.BLOGGER_CLIENT_SECRET }}
           BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
           BLOGGER_BLOG_ID: ${{ secrets.BLOGGER_BLOG_ID }}
+
         run: |
           python - <<'PY'
           import os
@@ -21,67 +22,248 @@ jobs:
           import urllib.parse
           import urllib.request
 
-          client_id = os.environ["BLOGGER_CLIENT_ID"]
-          client_secret = os.environ["BLOGGER_CLIENT_SECRET"]
-          refresh_token = os.environ["BLOGGER_REFRESH_TOKEN"]
-          blog_id = os.environ["BLOGGER_BLOG_ID"]
+          print("====================================")
+          print("       BLOGGER CONNECTION TEST")
+          print("====================================")
 
-          # Get a fresh Google access token
+          # GitHub Secrets
+          client_id = os.environ.get("BLOGGER_CLIENT_ID", "")
+          client_secret = os.environ.get("BLOGGER_CLIENT_SECRET", "")
+          refresh_token = os.environ.get("BLOGGER_REFRESH_TOKEN", "")
+          blog_id = os.environ.get("BLOGGER_BLOG_ID", "")
+
+          # Check Secrets
+          if not client_id:
+              raise Exception("BLOGGER_CLIENT_ID secret is missing")
+
+          if not client_secret:
+              raise Exception("BLOGGER_CLIENT_SECRET secret is missing")
+
+          if not refresh_token:
+              raise Exception("BLOGGER_REFRESH_TOKEN secret is missing")
+
+          if not blog_id:
+              raise Exception("BLOGGER_BLOG_ID secret is missing")
+
+          print("✓ All required secrets are present")
+          print("✓ Blog ID received")
+
+          # ==========================================
+          # STEP 1 - Get Google Access Token
+          # ==========================================
+
+          print("")
+          print("Getting Google access token...")
+
           token_data = urllib.parse.urlencode({
               "client_id": client_id,
               "client_secret": client_secret,
               "refresh_token": refresh_token,
               "grant_type": "refresh_token"
-          }).encode()
+          }).encode("utf-8")
 
           token_request = urllib.request.Request(
               "https://oauth2.googleapis.com/token",
               data=token_data,
-              headers={"Content-Type": "application/x-www-form-urlencoded"},
+              headers={
+                  "Content-Type":
+                  "application/x-www-form-urlencoded"
+              },
               method="POST"
           )
 
-          with urllib.request.urlopen(token_request) as response:
-              token_result = json.loads(response.read().decode())
+          try:
+              with urllib.request.urlopen(
+                  token_request
+              ) as response:
 
-          access_token = token_result["access_token"]
+                  token_result = json.loads(
+                      response.read().decode("utf-8")
+                  )
 
-          # Create a Blogger draft post
+          except urllib.error.HTTPError as e:
+
+              print("")
+              print("====================================")
+              print("       GOOGLE TOKEN ERROR")
+              print("====================================")
+
+              print("HTTP Status:", e.code)
+              print("Reason:", e.reason)
+              print("Response:")
+
+              print(
+                  e.read().decode("utf-8")
+              )
+
+              raise
+
+          access_token = token_result.get(
+              "access_token"
+          )
+
+          if not access_token:
+              raise Exception(
+                  "Google did not return an access token"
+              )
+
+          print("✓ Google access token received")
+
+          # ==========================================
+          # STEP 2 - Prepare Blogger Draft
+          # ==========================================
+
+          print("")
+          print("Preparing Blogger draft...")
+
           post = {
               "kind": "blogger#post",
-              "title": "OnlyTels Auto Blog - Connection Test",
+
+              "title":
+                  "Blogger Connection Test",
+
               "content": """
-              <div>
-                <h2>OnlyTels Auto Blog Test</h2>
-                <p>આ માત્ર Blogger API connection test છે.</p>
-                <p>જો આ post Blogger Draftsમાં દેખાય છે, તો GitHub અને Blogger successfully connected છે.</p>
-              </div>
-              """
+          <div>
+            <h2>Blogger API Connection Test</h2>
+
+            <p>
+              આ માત્ર Blogger API connection test છે.
+            </p>
+
+            <p>
+              જો આ post Blogger Draftsમાં દેખાય છે,
+              તો GitHub અને Blogger successfully connected છે.
+            </p>
+
+            <p>
+              GitHub → Google OAuth → Blogger API
+            </p>
+          </div>
+          """
           }
+
+          # ==========================================
+          # STEP 3 - Blogger API URL
+          # ==========================================
+
+          encoded_blog_id = urllib.parse.quote(
+              blog_id,
+              safe=""
+          )
 
           url = (
               "https://www.googleapis.com/blogger/v3/blogs/"
-              + urllib.parse.quote(blog_id, safe="")
+              + encoded_blog_id
               + "/posts?isDraft=true"
           )
 
-          post_data = json.dumps(post).encode("utf-8")
+          post_data = json.dumps(
+              post,
+              ensure_ascii=False
+          ).encode("utf-8")
+
+          # ==========================================
+          # STEP 4 - Send Blogger Request
+          # ==========================================
+
+          print("")
+          print("Sending request to Blogger API...")
 
           post_request = urllib.request.Request(
               url,
               data=post_data,
               headers={
-                  "Authorization": "Bearer " + access_token,
-                  "Content-Type": "application/json"
+                  "Authorization":
+                      "Bearer " + access_token,
+
+                  "Content-Type":
+                      "application/json",
+
+                  "Accept":
+                      "application/json"
               },
               method="POST"
           )
 
-          with urllib.request.urlopen(post_request) as response:
-              result = json.loads(response.read().decode())
+          try:
+              with urllib.request.urlopen(
+                  post_request
+              ) as response:
 
-          print("SUCCESS!")
-          print("Draft created successfully.")
-          print("Post ID:", result.get("id"))
-          print("Title:", result.get("title"))
+                  response_data = (
+                      response
+                      .read()
+                      .decode("utf-8")
+                  )
+
+                  result = json.loads(
+                      response_data
+                  )
+
+          except urllib.error.HTTPError as e:
+
+              print("")
+              print("====================================")
+              print("       BLOGGER API ERROR")
+              print("====================================")
+
+              print(
+                  "HTTP Status:",
+                  e.code
+              )
+
+              print(
+                  "Reason:",
+                  e.reason
+              )
+
+              print("")
+              print(
+                  "Google Blogger Response:"
+              )
+
+              print(
+                  e.read().decode("utf-8")
+              )
+
+              print("")
+              print("====================================")
+
+              raise
+
+          # ==========================================
+          # STEP 5 - Success
+          # ==========================================
+
+          print("")
+          print("====================================")
+          print("             SUCCESS!")
+          print("====================================")
+
+          print(
+              "Draft created successfully."
+          )
+
+          print(
+              "Post ID:",
+              result.get("id")
+          )
+
+          print(
+              "Title:",
+              result.get("title")
+          )
+
+          print(
+              "Status:",
+              result.get("status")
+          )
+
+          print("")
+          print(
+              "GitHub → Blogger connection is working."
+          )
+
+          print("====================================")
+
           PY
