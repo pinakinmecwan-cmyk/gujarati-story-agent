@@ -1,0 +1,87 @@
+name: OnlyTels Blogger Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  blogger-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Test Blogger Connection
+        env:
+          BLOGGER_CLIENT_ID: ${{ secrets.BLOGGER_CLIENT_ID }}
+          BLOGGER_CLIENT_SECRET: ${{ secrets.BLOGGER_CLIENT_SECRET }}
+          BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
+          BLOGGER_BLOG_ID: ${{ secrets.BLOGGER_BLOG_ID }}
+        run: |
+          python - <<'PY'
+          import os
+          import json
+          import urllib.parse
+          import urllib.request
+
+          client_id = os.environ["BLOGGER_CLIENT_ID"]
+          client_secret = os.environ["BLOGGER_CLIENT_SECRET"]
+          refresh_token = os.environ["BLOGGER_REFRESH_TOKEN"]
+          blog_id = os.environ["BLOGGER_BLOG_ID"]
+
+          # Get a fresh Google access token
+          token_data = urllib.parse.urlencode({
+              "client_id": client_id,
+              "client_secret": client_secret,
+              "refresh_token": refresh_token,
+              "grant_type": "refresh_token"
+          }).encode()
+
+          token_request = urllib.request.Request(
+              "https://oauth2.googleapis.com/token",
+              data=token_data,
+              headers={"Content-Type": "application/x-www-form-urlencoded"},
+              method="POST"
+          )
+
+          with urllib.request.urlopen(token_request) as response:
+              token_result = json.loads(response.read().decode())
+
+          access_token = token_result["access_token"]
+
+          # Create a Blogger draft post
+          post = {
+              "kind": "blogger#post",
+              "title": "OnlyTels Auto Blog - Connection Test",
+              "content": """
+              <div>
+                <h2>OnlyTels Auto Blog Test</h2>
+                <p>આ માત્ર Blogger API connection test છે.</p>
+                <p>જો આ post Blogger Draftsમાં દેખાય છે, તો GitHub અને Blogger successfully connected છે.</p>
+              </div>
+              """
+          }
+
+          url = (
+              "https://www.googleapis.com/blogger/v3/blogs/"
+              + urllib.parse.quote(blog_id, safe="")
+              + "/posts?isDraft=true"
+          )
+
+          post_data = json.dumps(post).encode("utf-8")
+
+          post_request = urllib.request.Request(
+              url,
+              data=post_data,
+              headers={
+                  "Authorization": "Bearer " + access_token,
+                  "Content-Type": "application/json"
+              },
+              method="POST"
+          )
+
+          with urllib.request.urlopen(post_request) as response:
+              result = json.loads(response.read().decode())
+
+          print("SUCCESS!")
+          print("Draft created successfully.")
+          print("Post ID:", result.get("id"))
+          print("Title:", result.get("title"))
+          PY
